@@ -1,0 +1,161 @@
+version: '3'
+
+networks:
+  fastfood:
+    driver: bridge
+services:
+  nginx:
+    container_name: nginx
+    image: nginx:1.13
+    restart: always
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - admin
+      - order
+      - delivery
+    networks:
+      - fastfood
+  zookeeper:
+    container_name: zookeeper
+    image: wurstmeister/zookeeper
+    networks:
+      - fastfood
+  kafka:
+    container_name: kafka
+    image: wurstmeister/kafka
+    environment:
+      KAFKA_LISTENERS: INTERNAL://kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "orders:1:1,cooked_orders:1:1,cancelled_orders:1:1,dish_updates:1:1,notifications:1:1"
+    restart: always  
+    networks:
+      - fastfood
+  db:
+    image: postgres
+    container_name: db
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=fast_food
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - fastfood
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: mail@mail.ru
+      PGADMIN_DEFAULT_PASSWORD: password
+    ports:
+    - "5050:80"
+    networks:
+      - fastfood
+  dish:
+    container_name: dish
+    image: hasover/job4j_fast_food_dish
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - db
+      - kafka
+    restart: on-failure:5
+    networks:
+      - fastfood
+  admin:
+    container_name: admin
+    image: hasover/job4j_fast_food_admin
+    environment:
+      - DISHES_API_URL=http://dish:8082/dishes
+      - SERVER_FORWARD-HEADERS-STRATEGY=FRAMEWORK
+    restart: on-failure:5
+    networks:
+      - fastfood
+    depends_on:
+      - dish    
+  payment:
+    container_name: payment
+    image: hasover/job4j_fast_food_payment
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+    depends_on:
+      - db
+    restart: on-failure:5
+    networks:
+      - fastfood
+  order:
+    container_name: order
+    image: hasover/job4j_fast_food_order
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - DISHES_API_URL=http://dish:8082/dishes
+      - PAYMENTS_API_URL=http://payment:8087/payments
+    depends_on:
+      - db
+      - dish
+      - kafka
+      - payment
+    restart: on-failure:5
+    networks:
+      - fastfood
+  kitchen:
+    container_name: kitchen
+    image: hasover/job4j_fast_food_kitchen
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - db
+      - kafka
+    restart: on-failure:5
+    networks:
+      - fastfood
+  notification:
+    container_name: notification
+    image: hasover/job4j_fast_food_notification
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - db
+      - kafka
+    restart: on-failure:5
+    networks:
+      - fastfood
+  delivery:
+    container_name: delivery
+    image: hasover/job4j_fast_food_delivery
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fast_food
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ORDERS_API_URL=http://order:8086/orders
+    depends_on:
+      - db
+      - kafka
+    restart: on-failure:5
+    networks:
+      - fastfood
+volumes:
+  postgres:
+    
